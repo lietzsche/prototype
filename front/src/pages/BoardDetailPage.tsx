@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   addComment,
-  addReply,
   deleteComment,
   deletePost,
-  getReplies,
   getComments,
   getPost,
   type Comment,
@@ -13,6 +11,7 @@ import {
   isLoggedIn,
   updatePost,
 } from '../api'
+import CommentTree from '../components/CommentTree'
 
 function BoardDetailPage() {
   const { id } = useParams()
@@ -20,12 +19,9 @@ function BoardDetailPage() {
   const navigate = useNavigate()
   const [post, setPost] = useState<Post | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
-  const [replies, setReplies] = useState<Record<number, Comment[]>>({})
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
-  const [replyText, setReplyText] = useState<Record<number, string>>({})
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
@@ -74,48 +70,6 @@ function BoardDetailPage() {
     try {
       await deleteComment(postId, cid)
       setComments((prev) => prev.filter((c) => c.id !== cid))
-      // remove from replies map (if deleting a top-level comment, backend deletes nested too)
-      setReplies((prev) => {
-        const copy = { ...prev }
-        delete copy[cid]
-        return copy
-      })
-    } catch (e: any) {
-      alert(e.message || 'Failed to delete')
-    }
-  }
-
-  const toggleReplies = async (parentId: number) => {
-    setExpanded((prev) => ({ ...prev, [parentId]: !prev[parentId] }))
-    // lazy load only once
-    if (!replies[parentId]) {
-      try {
-        const rs = await getReplies(postId, parentId)
-        setReplies((prev) => ({ ...prev, [parentId]: rs }))
-      } catch (e: any) {
-        alert(e.message || 'Failed to load replies')
-      }
-    }
-  }
-
-  const handleAddReply = async (parentId: number) => {
-    const content = (replyText[parentId] || '').trim()
-    if (!content) return
-    try {
-      const r = await addReply(postId, parentId, { content })
-      setReplies((prev) => ({ ...prev, [parentId]: [...(prev[parentId] || []), r] }))
-      setReplyText((prev) => ({ ...prev, [parentId]: '' }))
-      setExpanded((prev) => ({ ...prev, [parentId]: true }))
-    } catch (e: any) {
-      alert(e.message || 'Failed to add reply')
-    }
-  }
-
-  const handleDeleteReply = async (replyId: number, parentId: number) => {
-    if (!confirm('Delete this reply?')) return
-    try {
-      await deleteComment(postId, replyId)
-      setReplies((prev) => ({ ...prev, [parentId]: (prev[parentId] || []).filter((r) => r.id !== replyId) }))
     } catch (e: any) {
       alert(e.message || 'Failed to delete')
     }
@@ -173,49 +127,12 @@ function BoardDetailPage() {
       <h3 className="text-xl font-medium mt-8 mb-2">Comments</h3>
       <ul className="space-y-3">
         {comments.map((c) => (
-          <li key={c.id} className="border rounded p-3 bg-gray-50">
-            <div className="text-sm text-gray-600 mb-1">{c.author} • {new Date(c.createdAt).toLocaleString()}</div>
-            <div className="whitespace-pre-wrap mb-2">{c.content}</div>
-            <div className="flex items-center gap-3">
-              <button onClick={() => toggleReplies(c.id)} className="text-sm link">
-                {expanded[c.id] ? 'Hide replies' : 'Show replies'}
-              </button>
-              {authed && (
-                <button onClick={() => handleDeleteComment(c.id)} className="text-sm text-red-600 hover:underline">
-                  Delete
-                </button>
-              )}
-            </div>
-
-            {expanded[c.id] && (
-              <div className="mt-3 ml-4 border-l pl-4 space-y-3">
-                {(replies[c.id] || []).map((r) => (
-                  <div key={r.id} className="bg-white rounded p-2">
-                    <div className="text-xs text-gray-600 mb-1">{r.author} • {new Date(r.createdAt).toLocaleString()}</div>
-                    <div className="whitespace-pre-wrap">{r.content}</div>
-                    {authed && (
-                      <button onClick={() => handleDeleteReply(r.id, c.id)} className="mt-1 text-xs text-red-600 hover:underline">
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {authed ? (
-                  <div className="flex gap-2">
-                    <input
-                      className="form-field flex-1"
-                      placeholder="Write a reply"
-                      value={replyText[c.id] || ''}
-                      onChange={(e) => setReplyText((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                    />
-                    <button onClick={() => handleAddReply(c.id)} className="button-primary">Reply</button>
-                  </div>
-                ) : (
-                  <p className="text-sm">Login to reply. <Link className="link" to="/login">Login</Link></p>
-                )}
-              </div>
-            )}
+          <li key={c.id}>
+            <CommentTree
+              postId={postId}
+              comment={c}
+              onDeleted={() => handleDeleteComment(c.id)}
+            />
           </li>
         ))}
       </ul>
